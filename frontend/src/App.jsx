@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { DemoLayout } from "./components/DemoLayout.jsx";
 import { StepNavigator } from "./components/StepNavigator.jsx";
 import { SummaryPanel } from "./components/SummaryPanel.jsx";
@@ -14,10 +14,13 @@ export default function App() {
   const [started, setStarted] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [backendState, setBackendState] = useState(null);
+  // Incremented after every backend response so StepNavigator restarts
+  // recording even when the same node is returned (re-prompt / retry).
+  const [recordingKey, setRecordingKey] = useState(0);
 
   const step = demoSteps[currentStepIndex];
 
-  async function handleSubmit(stepId, payload) {
+  const handleSubmit = useCallback(async (stepId, payload) => {
     setSessionSummary((prev) => {
       const updated = structuredClone(prev);
       updated.responses[stepId] = payload;
@@ -43,21 +46,25 @@ export default function App() {
           const idx = demoSteps.findIndex((s) => s.nodeLabel === node);
           if (idx !== -1) {
             setCurrentStepIndex(idx);
-          } else if (currentStepIndex < demoSteps.length - 1) {
-            setCurrentStepIndex((i) => i + 1);
+          } else {
+            setCurrentStepIndex((i) => Math.min(i + 1, demoSteps.length - 1));
           }
         }
       } catch (e) {
         console.error("Error calling backend step", e);
-        if (currentStepIndex < demoSteps.length - 1) {
-          setCurrentStepIndex((i) => i + 1);
-        }
+        setCurrentStepIndex((i) => Math.min(i + 1, demoSteps.length - 1));
+      } finally {
+        // Always bump recordingKey so StepNavigator's useEffect re-runs and
+        // starts a fresh recording cycle, whether we advanced or are retrying
+        // the same step after a validation failure.
+        setRecordingKey((n) => n + 1);
       }
-    } else if (currentStepIndex < demoSteps.length - 1) {
+    } else {
       // Fallback: purely local progression if no backend session.
-      setCurrentStepIndex((i) => i + 1);
+      setCurrentStepIndex((i) => Math.min(i + 1, demoSteps.length - 1));
+      setRecordingKey((n) => n + 1);
     }
-  }
+  }, [sessionId]);
 
   function handleBack() {
     setCurrentStepIndex((i) => (i > 0 ? i - 1 : 0));
@@ -69,6 +76,7 @@ export default function App() {
     setStarted(false);
     setSessionId(null);
     setBackendState(null);
+    setRecordingKey(0);
   }
 
   async function handleStart() {
@@ -118,6 +126,7 @@ export default function App() {
           totalSteps={demoSteps.length}
           onSubmit={handleSubmit}
           existingResponse={sessionSummary.responses[step.id]}
+          recordingKey={recordingKey}
         />
       )}
       <SummaryPanel
@@ -129,4 +138,3 @@ export default function App() {
     </DemoLayout>
   );
 }
-

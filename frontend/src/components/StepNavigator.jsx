@@ -2,16 +2,15 @@ import React, { useEffect, useRef, useState } from "react";
 
 const API_BASE = "http://localhost:8000";
 
-export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingResponse }) {
+export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingResponse, recordingKey }) {
   const [transcript, setTranscript] = useState(existingResponse?.text ?? "");
   const [status, setStatus] = useState("idle"); // idle | speaking | recording | transcribing | error
   const [audioSupported, setAudioSupported] = useState(false);
-  const abortRef = useRef(false);
   const mediaRecorderRef = useRef(null);
 
   // When step changes, reset and run: speak prompt -> record -> Deepgram STT.
   useEffect(() => {
-    abortRef.current = false;
+    let cancelled = false;
     setTranscript("");
 
     const hasAudio =
@@ -51,7 +50,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
         // Continue to recording even if TTS fails so the flow remains usable.
       }
 
-      if (abortRef.current) return;
+      if (cancelled) return;
 
       // 2) Capture microphone audio
       try {
@@ -70,7 +69,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
           stream.getTracks().forEach((t) => t.stop());
           mediaRecorderRef.current = null;
 
-          if (abortRef.current) return;
+          if (cancelled) return;
           if (!chunks.length) {
             setStatus("error");
             return;
@@ -128,7 +127,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
     speakThenRecordAndTranscribe();
 
     return () => {
-      abortRef.current = true;
+      cancelled = true;
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state === "recording") {
         try {
@@ -139,7 +138,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
       }
       mediaRecorderRef.current = null;
     };
-  }, [step.id, step.systemPrompt, onSubmit]);
+  }, [step.id, step.systemPrompt, onSubmit, recordingKey]);
 
   const progress = Math.round(((stepIndex + 1) / totalSteps) * 100);
 
