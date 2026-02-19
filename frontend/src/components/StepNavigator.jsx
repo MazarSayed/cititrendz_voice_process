@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_BASE = "http://localhost:8000";
 
@@ -37,6 +37,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
           throw new Error(`TTS error: ${resp.status}`);
         }
         const blob = await resp.blob();
+        if (cancelled) return;
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         await new Promise((resolve, reject) => {
