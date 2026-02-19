@@ -20,6 +20,14 @@ _DEFECT_KEYWORDS: dict[str, str] = {
     "smell": "odor",
 }
 
+_WORD_NUMBERS: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20,
+}
+
 
 def _parse_defect(transcript: str) -> tuple[str | None, int | None, str | None]:
     """
@@ -44,9 +52,12 @@ def _parse_defect(transcript: str) -> tuple[str | None, int | None, str | None]:
     if defect_type is None:
         defect_type = "other"
 
-    # Count: first integer mentioned
+    # Count: digit number first, then word number fallback
     m = re.search(r"\b(\d+)\b", t)
-    count = int(m.group(1)) if m else None
+    if m:
+        count = int(m.group(1))
+    else:
+        count = next((v for k, v in _WORD_NUMBERS.items() if re.search(rf"\b{k}\b", t)), None)
 
     # Severity
     severity = None
