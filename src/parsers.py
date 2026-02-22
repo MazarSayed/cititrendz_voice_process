@@ -6,12 +6,46 @@ from typing import Tuple
 from .state import DamageSeverity
 
 _WORD_NUMBERS: dict[str, int] = {
+    "zero": 0, "oh": 0,
     "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
     "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
     "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
     "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
     "nineteen": 19, "twenty": 20,
 }
+
+
+def words_to_digits(s: str) -> str:
+    """
+    Convert spoken digit words to digits, e.g. "one two three four five six" -> "123456".
+    Handles both single-digit words (one, two, ...) and digit characters.
+    """
+    if not s or not s.strip():
+        return ""
+    parts = re.split(r"[\s,.-]+", s.lower().strip())
+    result = []
+    for p in parts:
+        if p.isdigit() and len(p) == 1:
+            result.append(p)
+        elif p in _WORD_NUMBERS:
+            v = _WORD_NUMBERS[p]
+            if 0 <= v <= 9:
+                result.append(str(v))
+    return "".join(result)
+
+
+def normalize_po_number(raw: str) -> str:
+    """
+    Extract pure digits-only PO number from raw input.
+    Handles: "PO 123456", "123456", "1, 2, 3, 4, 5, 6", "one two three four five six".
+    Result is used to identify package in data/po_packages/{po_number}/.
+    """
+    if not raw or not isinstance(raw, str):
+        return ""
+    digits = "".join(c for c in raw if c.isdigit())
+    if digits:
+        return digits.lstrip("0") or "0"
+    return words_to_digits(raw)
 
 
 def parse_confirm_mismatch(transcript: str) -> Tuple[bool | None, str | None]:

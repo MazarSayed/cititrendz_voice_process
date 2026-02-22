@@ -13,6 +13,7 @@ NodeName = Literal[
     "CONTROL",
     "START_IDENTIFICATION",
     "PO_CARTON_VERIFICATION",
+    "CARTON_VERIFICATION",
     "CARTON_CONDITION",
     "STYLE_SKU_VERIFICATION",
     "COLOR_SIZE_VERIFICATION",
@@ -26,6 +27,11 @@ NodeName = Literal[
     "COMPLETE_STYLE",
     "CLOSE_PO",
 ]
+
+
+class Message(TypedDict):
+    role: str      # "user" | "assistant"
+    content: str
 
 
 class Event(TypedDict, total=False):
@@ -148,8 +154,17 @@ class InspectionState(TypedDict, total=False):
     # Snapshots of the most recent prompt (useful for reconnect UX).
     last_prompt: LastPrompt
 
+    # Full conversation record (assistant prompts + user transcripts).
+    messages: list[Message]
+
     # Generic bucket for counters/errors (supports re-prompt loops).
     attempts: dict[str, Any]
+
+    # Per-carton match/mismatch status (carton_id or barcode -> "Match" | "Mismatch").
+    carton_match_results: dict[str, str]
+
+    # Carton verification: index of current carton being verified.
+    current_carton_index: int
 
 
 def utc_now() -> str:
@@ -187,6 +202,7 @@ def new_session_state(session_id: str) -> InspectionState:
         "history": [],
         "events": [],
         "attempts": {},
+        "messages": [],
         "current_style": {},
         "completed_styles_data": [],
         "completed_styles": 0,

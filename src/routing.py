@@ -21,9 +21,11 @@ def compute_next_node(state: InspectionState) -> NodeName:
     # Branching transitions
     if last == "PO_CARTON_VERIFICATION":
         if state.get("po_verification_result") == "CONFIRMED":
-            return "CARTON_CONDITION"
-        # For mismatch, remain in PO verification until resolved.
+            return "CARTON_VERIFICATION"
         return "PO_CARTON_VERIFICATION"
+
+    if last == "CARTON_VERIFICATION":
+        return "CARTON_CONDITION"
 
     if last == "COMPLETE_STYLE":
         action = state.get("complete_style_action")
@@ -36,6 +38,7 @@ def compute_next_node(state: InspectionState) -> NodeName:
     # Default linear transitions (happy path)
     next_map: dict[NodeName, NodeName] = {
         "START_IDENTIFICATION": "PO_CARTON_VERIFICATION",
+        "CARTON_VERIFICATION": "CARTON_CONDITION",
         "CARTON_CONDITION": "STYLE_SKU_VERIFICATION",
         "STYLE_SKU_VERIFICATION": "COLOR_SIZE_VERIFICATION",
         "COLOR_SIZE_VERIFICATION": "UNIT_COUNT_BY_SIZE",

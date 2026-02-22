@@ -4,7 +4,10 @@ Central place for node prompt strings.
 Keeps each node file focused on logic while still making prompts easy to edit.
 """
 
-START_IDENTIFICATION_PROMPT = "Scan the carton barcode or say the PO number to begin inspection."
+START_IDENTIFICATION_PROMPT = (
+    "Scan the carton barcode or say the PO number to begin. "
+    "The system will verify the PO is available in our packages list."
+)
 
 CARTON_CONDITION_PROMPT = (
     "Inspect the carton. Look for crushing, punctures, water damage, or retape. "
@@ -58,12 +61,16 @@ def po_carton_verification_prompt(
     vendor: str | None,
     expected_style_count: int | None,
     expected_units_total: int | None,
+    carton_count: int | None = None,
 ) -> str:
-    v = vendor or "Unknown vendor"
-    sc = expected_style_count if expected_style_count is not None else "Unknown"
-    eu = expected_units_total if expected_units_total is not None else "Unknown"
-    return (
-        f"PO {po_number}, Vendor {v}, Style count {sc}, Expected units {eu}. "
-        "Say Confirm or Mismatch."
-    )
+    parts = [f"PO {po_number}"]
+    parts.append(f"Vendor {vendor or 'Unknown vendor'}")
+    if expected_style_count is not None:
+        parts.append(f"Style count {expected_style_count}")
+    if expected_units_total is not None:
+        parts.append(f"Expected units {expected_units_total}")
+    if carton_count is not None:
+        parts.append(f"{carton_count} cartons to verify")
+    parts.append("Say Confirm or Mismatch.")
+    return ", ".join(parts) + "."
 

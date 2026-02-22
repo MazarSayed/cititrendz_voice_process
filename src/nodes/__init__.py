@@ -7,6 +7,7 @@ One node per file to keep the workflow easy to grow and test.
 __all__ = [
     "start_identification_node",
     "po_carton_verification_node",
+    "carton_verification_node",
     "carton_condition_node",
     "style_sku_verification_node",
     "color_size_verification_node",
@@ -19,10 +20,12 @@ __all__ = [
     "notes_optional_node",
     "complete_style_node",
     "close_po_node",
+    "NODES",
 ]
 
 from .start_identification import start_identification_node
 from .po_carton_verification import po_carton_verification_node
+from .carton_verification import carton_verification_node
 from .carton_condition import carton_condition_node
 from .style_sku_verification import style_sku_verification_node
 from .color_size_verification import color_size_verification_node
@@ -35,4 +38,5 @@ from .disposition import disposition_node
 from .notes_optional import notes_optional_node
 from .complete_style import complete_style_node
 from .close_po import close_po_node
+from .registry import NODES
 

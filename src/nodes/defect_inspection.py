@@ -1,151 +1,38 @@
 from __future__ import annotations
 
-import re
+from typing import Any
 
 from .prompts import DEFECT_INSPECTION_PROMPT
-from ..state import DefectEntry, InspectionState, ensure_current_style, make_event, utc_now
+from ..node_runner import run_node
+from ..state import InspectionState, ensure_current_style
 
 
-_DEFECT_KEYWORDS: dict[str, str] = {
-    "stain": "stains",
-    "stains": "stains",
-    "hole": "holes",
-    "holes": "holes",
-    "tear": "tears",
-    "tears": "tears",
-    "seam": "seam_defect",
-    "misprint": "misprint",
-    "misprints": "misprint",
-    "odor": "odor",
-    "smell": "odor",
-}
+def apply_defect(s: InspectionState, ext: Any) -> tuple[bool, dict[str, Any], str | None]:
+    if not ext:
+        return False, {}, None
+    if ext.all_units_ok is True:
+        style = ensure_current_style(s)
+        style["all_units_ok"] = True
+        style["defects"] = []
+        return True, {"all_units_ok": True, "defects": []}, None
+    if not ext.defects:
+        return False, {}, None
 
-_WORD_NUMBERS: dict[str, int] = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
-    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20,
-}
+    for d in ext.defects:
+        if d.affected_units is None or d.severity is None:
+            return False, {}, None
 
-
-def _parse_defect(transcript: str) -> tuple[str | None, int | None, str | None]:
-    """
-    Returns (defect_type, affected_unit_count, severity) where severity is MINOR|MAJOR.
-
-    Minimal and conservative:
-    - requires a numeric count
-    - requires severity word
-    - defect type guessed from keywords (else 'other')
-    """
-
-    t = transcript.strip().lower()
-    if not t:
-        return (None, None, None)
-
-    # Defect type
-    defect_type = None
-    for kw, normalized in _DEFECT_KEYWORDS.items():
-        if kw in t:
-            defect_type = normalized
-            break
-    if defect_type is None:
-        defect_type = "other"
-
-    # Count: digit number first, then word number fallback
-    m = re.search(r"\b(\d+)\b", t)
-    if m:
-        count = int(m.group(1))
-    else:
-        count = next((v for k, v in _WORD_NUMBERS.items() if re.search(rf"\b{k}\b", t)), None)
-
-    # Severity
-    severity = None
-    if "minor" in t:
-        severity = "MINOR"
-    elif "major" in t:
-        severity = "MAJOR"
-
-    return (defect_type, count, severity)
+    defects = [
+        {"type": d.type or "other",
+         "affected_units": d.affected_units,
+         "severity": d.severity.upper()}
+        for d in ext.defects
+    ]
+    style = ensure_current_style(s)
+    style["all_units_ok"] = False
+    style["defects"] = defects
+    return True, {"all_units_ok": False, "defects": defects}, None
 
 
 def defect_inspection_node(state: InspectionState) -> InspectionState:
-    """
-    Step 6 from required_flow.md:
-    - If "All units OK" → set all_units_ok=true, defects=[]
-    - Else capture a single defect entry (type, affected count, severity) for now
-    - Advance to TAGS_LABELING (still TODO)
-    """
-
-    s: InspectionState = dict(state)
-    s.setdefault("history", [])
-    s.setdefault("events", [])
-
-    user_input = s.get("last_user_input") or {}
-    transcript = (user_input.get("transcript") or "").strip()
-
-    if not transcript:
-        s["current_node"] = "DEFECT_INSPECTION_100pct"
-        s["awaiting_input"] = True
-        s["last_prompt"] = {"text": DEFECT_INSPECTION_PROMPT, "ts": utc_now()}
-        s["events"].append(make_event(node="DEFECT_INSPECTION_100pct", type_="PROMPTED", payload={}))
-        return s
-
-    t = transcript.lower()
-    if "all units ok" in t or "all unit ok" in t:
-        style = ensure_current_style(s)
-        style["all_units_ok"] = True
-        style["defects"] = []  # type: ignore[assignment]
-        s["events"].append(
-            make_event(
-                node="DEFECT_INSPECTION_100pct",
-                type_="FIELDS_CAPTURED",
-                payload={"all_units_ok": True, "defects": []},
-            )
-        )
-        s["history"].append("DEFECT_INSPECTION_100pct")
-        s["awaiting_input"] = False
-        s["last_completed_node"] = "DEFECT_INSPECTION_100pct"
-        s["last_user_input"] = {}
-        return s
-
-    defect_type, count, severity = _parse_defect(transcript)
-    if count is None or severity is None:
-        missing: list[str] = []
-        if count is None:
-            missing.append("affected_unit_count")
-        if severity is None:
-            missing.append("severity")
-        s["current_node"] = "DEFECT_INSPECTION_100pct"
-        s["awaiting_input"] = True
-        s["last_prompt"] = {
-            "text": "Say defect type, affected unit count, and severity (minor or major).",
-            "ts": utc_now(),
-        }
-        s["events"].append(
-            make_event(
-                node="DEFECT_INSPECTION_100pct",
-                type_="VALIDATION_FAILED",
-                payload={"missing": missing, "transcript": transcript},
-            )
-        )
-        s["last_user_input"] = {}
-        return s
-
-    defect: DefectEntry = {"type": defect_type or "other", "affected_units": count, "severity": severity}
-    style = ensure_current_style(s)
-    style["all_units_ok"] = False
-    style["defects"] = [defect]
-    s["events"].append(
-        make_event(
-            node="DEFECT_INSPECTION_100pct",
-            type_="FIELDS_CAPTURED",
-            payload={"all_units_ok": False, "defects": [defect]},
-        )
-    )
-    s["history"].append("DEFECT_INSPECTION_100pct")
-    s["awaiting_input"] = False
-    s["last_completed_node"] = "DEFECT_INSPECTION_100pct"
-    s["last_user_input"] = {}
-    return s
-
+    return run_node(state, "DEFECT_INSPECTION_100pct", DEFECT_INSPECTION_PROMPT, apply_defect)

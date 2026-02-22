@@ -1,89 +1,47 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .prompts import START_IDENTIFICATION_PROMPT
-from ..state import InspectionState, make_event, utc_now
+from ..node_runner import run_node
+from ..node_utils import fields_captured
+from ..parsers import normalize_po_number
+from ..po_packages import list_available_pos, resolve_po
+from ..state import InspectionState
 
 
-def _extract_po_number(transcript: str) -> str | None:
-    """
-    Minimal PO extraction.
+def apply_start_id(s: InspectionState, ext: Any) -> tuple[bool, dict[str, Any], str | None]:
+    if not ext:
+        return False, {}, None
+    po = ext.po_number
+    carton = ext.carton_barcode
+    if carton:
+        s["carton_barcode"] = carton
+        return True, {"carton_barcode": carton}, None
+    if isinstance(po, str):
+        raw = normalize_po_number(po)
+        if len(raw) >= 3:
+            resolved = resolve_po(raw) or resolve_po(po)
+            if resolved:
+                s["po_number"] = resolved
+                return True, {"po_number": resolved}, None
+            # PO not in our packages list
+            available = list_available_pos()
+            avail_str = ", ".join(available[:8]) + ("..." if len(available) > 8 else "")
+            return False, {}, f"PO {raw} is not available. Available POs: {avail_str}. Please say a valid PO number."
+    return False, {}, None
 
-    v1: keep it conservative—only extract digits and require a minimum length.
-    Later we can add number-word parsing ("one two three") and vendor-specific formats.
-    """
 
-    digits = "".join(ch for ch in transcript if ch.isdigit())
-    if len(digits) >= 5:
-        return digits
-    return None
+def scan_handler(s: InspectionState, scan: str) -> InspectionState:
+    s["carton_barcode"] = scan
+    return fields_captured("START_IDENTIFICATION", s, {"carton_barcode": scan})
 
 
 def start_identification_node(state: InspectionState) -> InspectionState:
-    """
-    Step 0 from required_flow.md:
-    - Prompt for carton barcode scan OR spoken PO number.
-    - If not provided/parsed, re-prompt and stay on this node.
-    - If captured, advance to PO_CARTON_VERIFICATION.
-    """
-
-    s: InspectionState = dict(state)
-    s.setdefault("history", [])
-    s.setdefault("events", [])
-
-    # If no user input yet, just prompt.
-    user_input = s.get("last_user_input") or {}
-    transcript = (user_input.get("transcript") or "").strip()
-    scan = (user_input.get("scan") or "").strip()
-
-    if not transcript and not scan:
-        s["current_node"] = "START_IDENTIFICATION"
-        s["awaiting_input"] = True
-        s["last_prompt"] = {"text": START_IDENTIFICATION_PROMPT, "ts": utc_now()}
-        s["events"].append(make_event(node="START_IDENTIFICATION", type_="PROMPTED", payload={}))
-        return s
-
-    # Prefer scan if present.
-    if scan:
-        s["carton_barcode"] = scan
-        s["events"].append(
-            make_event(
-                node="START_IDENTIFICATION",
-                type_="FIELDS_CAPTURED",
-                payload={"carton_barcode": scan},
-            )
-        )
-        s["history"].append("START_IDENTIFICATION")
-        s["awaiting_input"] = False
-        s["last_completed_node"] = "START_IDENTIFICATION"
-        s["last_user_input"] = {}
-        return s
-
-    po = _extract_po_number(transcript)
-    if po:
-        s["po_number"] = po
-        s["events"].append(
-            make_event(node="START_IDENTIFICATION", type_="FIELDS_CAPTURED", payload={"po_number": po})
-        )
-        s["history"].append("START_IDENTIFICATION")
-        s["awaiting_input"] = False
-        s["last_completed_node"] = "START_IDENTIFICATION"
-        s["last_user_input"] = {}
-        return s
-
-    # Could not parse; re-prompt and stay.
-    s["current_node"] = "START_IDENTIFICATION"
-    s["awaiting_input"] = True
-    s["last_prompt"] = {
-        "text": "I didn’t catch that. Scan the carton barcode or say the PO number to begin inspection.",
-        "ts": utc_now(),
-    }
-    s["events"].append(
-        make_event(
-            node="START_IDENTIFICATION",
-            type_="VALIDATION_FAILED",
-            payload={"transcript": transcript},
-        )
+    return run_node(
+        state,
+        "START_IDENTIFICATION",
+        START_IDENTIFICATION_PROMPT,
+        apply_start_id,
+        scan_handler=scan_handler,
     )
-    s["last_user_input"] = {}
-    return s
-

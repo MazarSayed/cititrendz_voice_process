@@ -1,10 +1,13 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { DemoLayout } from "./components/DemoLayout.jsx";
 import { StepNavigator } from "./components/StepNavigator.jsx";
 import { SummaryPanel } from "./components/SummaryPanel.jsx";
+import { InspectionPanel } from "./components/InspectionPanel.jsx";
+import { CartonTable } from "./components/CartonTable.jsx";
 import { demoSteps, makeEmptySessionSummary } from "./demoData.js";
 
 const API_BASE = "http://localhost:8000";
+const POLL_SKIP_AFTER_STEP = 6; // Skip poll updates after step so Inspection state stays in sync
 
 export default function App() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -14,11 +17,69 @@ export default function App() {
   const [started, setStarted] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [backendState, setBackendState] = useState(null);
+  const [cartons, setCartons] = useState([]);
   // Incremented after every backend response so StepNavigator restarts
   // recording even when the same node is returned (re-prompt / retry).
   const [recordingKey, setRecordingKey] = useState(0);
+  const skipNextPollsRef = useRef(0);
 
   const step = demoSteps[currentStepIndex];
+
+  // Poll session state for real-time updates (every 1s)
+  // Skip applying poll result for a few cycles after step response (avoids stale overwrite)
+  useEffect(() => {
+    if (!sessionId) return;
+    const poll = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/session/${sessionId}/state`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (skipNextPollsRef.current > 0) {
+          skipNextPollsRef.current -= 1;
+          return;
+        }
+        setBackendState(data.state || {});
+      } catch (e) {
+        console.debug("Poll state error", e);
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 1000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  // Load carton list when PO number becomes available; init PO folder if needed
+  useEffect(() => {
+    const po = backendState?.po_number;
+    if (!po) {
+      setCartons([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        // Try to get cartons; if empty, init PO folder to create template
+        let resp = await fetch(`${API_BASE}/api/po/${encodeURIComponent(po)}/cartons`);
+        if (!resp.ok || cancelled) return;
+        let data = await resp.json();
+        let list = data.cartons || [];
+        if (list.length === 0) {
+          resp = await fetch(`${API_BASE}/api/po/${encodeURIComponent(po)}/init`, {
+            method: "POST",
+          });
+          if (resp.ok && !cancelled) {
+            data = await resp.json();
+            list = data.cartons || [];
+          }
+        }
+        setCartons(list);
+      } catch (e) {
+        console.debug("Load cartons error", e);
+        if (!cancelled) setCartons([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [backendState?.po_number]);
 
   const handleSubmit = useCallback(async (stepId, payload) => {
     setSessionSummary((prev) => {
@@ -41,7 +102,8 @@ export default function App() {
           console.error("Backend step error", resp.status);
         } else {
           const data = await resp.json();
-          setBackendState(data.state);
+          skipNextPollsRef.current = POLL_SKIP_AFTER_STEP;
+          setBackendState(data.state ? { ...data.state } : {});
           const node = data.current_node;
           const idx = demoSteps.findIndex((s) => s.nodeLabel === node);
           if (idx !== -1) {
@@ -76,6 +138,7 @@ export default function App() {
     setStarted(false);
     setSessionId(null);
     setBackendState(null);
+    setCartons([]);
     setRecordingKey(0);
   }
 
@@ -89,7 +152,8 @@ export default function App() {
       }
       const data = await resp.json();
       setSessionId(data.session_id);
-      setBackendState(data.state);
+      skipNextPollsRef.current = POLL_SKIP_AFTER_STEP;
+      setBackendState(data.state || {});
       const node = data.current_node;
       const idx = demoSteps.findIndex((s) => s.nodeLabel === node);
       setCurrentStepIndex(idx === -1 ? 0 : idx);
@@ -120,21 +184,50 @@ export default function App() {
           </button>
         </section>
       ) : (
-        <StepNavigator
-          step={step}
-          stepIndex={currentStepIndex}
-          totalSteps={demoSteps.length}
-          onSubmit={handleSubmit}
-          existingResponse={sessionSummary.responses[step.id]}
-          recordingKey={recordingKey}
-        />
+        <>
+          <StepNavigator
+            step={step}
+            stepIndex={currentStepIndex}
+            totalSteps={demoSteps.length}
+            onSubmit={handleSubmit}
+            existingResponse={sessionSummary.responses[step.id]}
+            recordingKey={recordingKey}
+            promptToSpeak={
+              backendState?.current_node === step.nodeLabel &&
+              backendState?.last_prompt?.text
+                ? backendState.last_prompt.text
+                : undefined
+            }
+          />
+          {backendState?.current_node === "CARTON_VERIFICATION" && (
+            <CartonTable
+              poNumber={backendState?.po_number}
+              cartons={cartons}
+              backendState={backendState}
+            />
+          )}
+        </>
       )}
+      <InspectionPanel
+        backendState={backendState}
+        stepIndex={currentStepIndex}
+        totalSteps={demoSteps.length}
+        stepLabel={step?.title}
+        sessionResponses={sessionSummary.responses}
+      />
       <SummaryPanel
         stepIndex={currentStepIndex}
         totalSteps={demoSteps.length}
         summary={sessionSummary}
         backendState={backendState}
       />
+      {backendState?.current_node !== "CARTON_VERIFICATION" && (
+        <CartonTable
+          poNumber={backendState?.po_number}
+          cartons={cartons}
+          backendState={backendState}
+        />
+      )}
     </DemoLayout>
   );
 }

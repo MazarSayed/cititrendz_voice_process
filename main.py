@@ -27,6 +27,11 @@ if str(SRC) not in sys.path:
 load_dotenv()
 
 from src.graph import build_graph, state_to_dict  # type: ignore  # noqa: E402
+from src.po_packages import (  # type: ignore  # noqa: E402
+    create_intrasheet_template,
+    get_cartons_for_po,
+    list_available_pos,
+)
 from src.state import (  # type: ignore  # noqa: E402
     InspectionState,
     new_session_state,
@@ -122,6 +127,46 @@ def start_session() -> StartSessionResponse:
     )
 
 
+@app.get("/api/session/{session_id}/state")
+def get_session_state(session_id: str) -> dict[str, Any]:
+    """
+    Return the current session state for real-time UI updates.
+    """
+    state = _sessions.get(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Unknown session_id")
+    return {"state": state_to_dict(state)}
+
+
+@app.get("/api/po")
+def list_pos() -> dict[str, Any]:
+    """Return list of available PO packages for identification."""
+    return {"po_numbers": list_available_pos()}
+
+
+@app.get("/api/po/{po_number}/cartons")
+def get_po_cartons(po_number: str) -> dict[str, Any]:
+    """
+    Return the carton/package list for a PO from Excel intrasheet.
+    """
+    cartons = get_cartons_for_po(po_number)
+    return {"po_number": po_number, "cartons": cartons}
+
+
+@app.post("/api/po/{po_number}/init")
+def init_po_packages(po_number: str) -> dict[str, Any]:
+    """
+    Create PO package folder and intrasheet.xlsx template if they don't exist.
+    """
+    path = create_intrasheet_template(po_number)
+    cartons = get_cartons_for_po(po_number)
+    return {
+        "po_number": po_number,
+        "path": str(path),
+        "cartons": cartons,
+    }
+
+
 @app.post("/api/session/{session_id}/step", response_model=StepResponse)
 def send_step(session_id: str, payload: StepRequest) -> StepResponse:
     """
@@ -143,6 +188,7 @@ def send_step(session_id: str, payload: StepRequest) -> StepResponse:
     state = _graph.invoke(state)
     _sessions[session_id] = state
 
+    # Global state: returned to frontend so UI reflects current step, PO number, etc.
     raw = state_to_dict(state)
     last_prompt = _extract_last_prompt(raw)
     current_node = raw.get("current_node")
@@ -232,8 +278,7 @@ async def transcribe_audio(audio: UploadFile = File(...)) -> SttResponse:
 
     transcript = text
     print(f"[STT] Parsed transcript: {transcript!r}")
-    if not transcript:
-        raise HTTPException(status_code=422, detail="No transcript returned from Deepgram.")
+    # Return 200 even when empty (silence/unclear audio) so frontend can prompt retry
     return SttResponse(transcript=transcript)
 
 

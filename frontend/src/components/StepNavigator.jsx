@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from "react";
 
 const API_BASE = "http://localhost:8000";
 
-export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingResponse, recordingKey }) {
+export function StepNavigator({
+  step,
+  stepIndex,
+  totalSteps,
+  onSubmit,
+  existingResponse,
+  recordingKey,
+  promptToSpeak,
+}) {
   const [transcript, setTranscript] = useState(existingResponse?.text ?? "");
   const [status, setStatus] = useState("idle"); // idle | speaking | recording | transcribing | error
   const [audioSupported, setAudioSupported] = useState(false);
@@ -25,13 +33,16 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
         return;
       }
 
-      // 1) Speak the system prompt via backend TTS (Deepgram).
+      // 1) Speak the prompt via backend TTS (Deepgram). Use follow-up from backend when re-prompting.
+      // Replace "PO" with "P O" so TTS spells it letter-by-letter (P-O) instead of "Po".
+      const rawText = promptToSpeak ?? step.systemPrompt ?? "";
+      const textToSpeak = String(rawText).replace(/\bPO\b/gi, "P O");
       try {
         setStatus("speaking");
         const resp = await fetch(`${API_BASE}/api/tts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: step.systemPrompt }),
+          body: JSON.stringify({ text: textToSpeak }),
         });
         if (!resp.ok) {
           throw new Error(`TTS error: ${resp.status}`);
@@ -139,7 +150,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
       }
       mediaRecorderRef.current = null;
     };
-  }, [step.id, step.systemPrompt, onSubmit, recordingKey]);
+  }, [step.id, step.systemPrompt, onSubmit, recordingKey, promptToSpeak]);
 
   const progress = Math.round(((stepIndex + 1) / totalSteps) * 100);
 
@@ -160,7 +171,7 @@ export function StepNavigator({ step, stepIndex, totalSteps, onSubmit, existingR
 
       <p className="system-prompt">
         <span className="prompt-label">System</span>
-        {step.systemPrompt}
+        {promptToSpeak ?? step.systemPrompt}
       </p>
 
       <p className="helper-text">{step.helperText}</p>

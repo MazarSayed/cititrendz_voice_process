@@ -43,7 +43,9 @@ export function SummaryPanel({ stepIndex, totalSteps, summary, backendState }) {
                 {response && (
                   <p className="summary-response">
                     <span className="summary-response-label">Associate:</span>{" "}
-                    {response.text}
+                    {step.id === "START_IDENTIFICATION" && backendState?.po_number
+                      ? backendState.po_number
+                      : response.text}
                   </p>
                 )}
               </li>
@@ -51,48 +53,6 @@ export function SummaryPanel({ stepIndex, totalSteps, summary, backendState }) {
           })}
         </ol>
 
-        {backendState && (
-          <>
-            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.18)", margin: "12px 0" }} />
-            <h3 className="summary-title" style={{ marginTop: 0 }}>
-              Inspection state
-            </h3>
-            <div className="summary-body">
-              <p className="summary-response">
-                <span className="summary-response-label">Session:</span>{" "}
-                {backendState.session_id || "—"}
-              </p>
-              <p className="summary-response">
-                <span className="summary-response-label">Current node:</span>{" "}
-                {backendState.current_node || "—"}
-              </p>
-              <p className="summary-response">
-                <span className="summary-response-label">PO number:</span>{" "}
-                {backendState.po_number || "—"}
-              </p>
-              <p className="summary-response">
-                <span className="summary-response-label">Carton status:</span>{" "}
-                {backendState.carton_status || "—"}
-              </p>
-              {backendState.current_style && (
-                <>
-                  <p className="summary-response">
-                    <span className="summary-response-label">Style ID:</span>{" "}
-                    {backendState.current_style.style_id || "—"}
-                  </p>
-                  <p className="summary-response">
-                    <span className="summary-response-label">Total units counted:</span>{" "}
-                    {backendState.current_style.total_units_counted ?? "—"}
-                  </p>
-                  <p className="summary-response">
-                    <span className="summary-response-label">Disposition:</span>{" "}
-                    {backendState.current_style.disposition || backendState.disposition || "—"}
-                  </p>
-                </>
-              )}
-            </div>
-          </>
-        )}
       </div>
     </section>
   );

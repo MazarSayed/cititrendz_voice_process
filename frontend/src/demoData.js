@@ -14,10 +14,20 @@ export const demoSteps = [
     title: "PO + Carton verification",
     nodeLabel: "PO_CARTON_VERIFICATION",
     systemPrompt:
-      "PO 123456, Vendor Acme Apparel, Style count 3, Expected units 48. Say Confirm or Mismatch.",
+      "PO details from package folder. Say Confirm or Mismatch.",
     helperText:
-      "Here the system reads PO header details and expects a simple confirm / mismatch response.",
+      "System reads PO header from data/po_packages/{po}/ (vendor, style count, expected units). Say Confirm or Mismatch.",
     inputPlaceholder: "Example: Confirm.",
+  },
+  {
+    id: "CARTON_VERIFICATION",
+    title: "Carton verification",
+    nodeLabel: "CARTON_VERIFICATION",
+    systemPrompt:
+      "Carton BC001. Say Match or Mismatch.",
+    helperText:
+      "System reads each carton ID from the PO list. Say Match or Mismatch for each.",
+    inputPlaceholder: "Example: Match.",
   },
   {
     id: "CARTON_CONDITION",

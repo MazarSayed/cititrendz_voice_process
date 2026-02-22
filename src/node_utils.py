@@ -5,6 +5,20 @@ from typing import Any, Tuple
 from .state import InspectionState, UserInput, make_event, utc_now
 
 
+def require_fields(extracted: Any, *keys: str) -> bool:
+    """
+    Return True if extracted has all required keys with non-empty values.
+    Use in apply_fn to enforce required-information validation before advancing.
+    """
+    if extracted is None:
+        return False
+    for key in keys:
+        val = getattr(extracted, key, None)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            return False
+    return True
+
+
 def init_node_state(state: InspectionState) -> InspectionState:
     """
     Common boilerplate for node functions:

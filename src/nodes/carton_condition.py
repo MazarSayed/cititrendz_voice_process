@@ -1,104 +1,31 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .prompts import CARTON_CONDITION_PROMPT
-from ..parsers import parse_carton_condition
-from ..state import DamageSeverity, InspectionState, make_event, utc_now
+from ..node_runner import run_node
+from ..state import InspectionState
+
+
+def apply_carton(s: InspectionState, ext: Any) -> tuple[bool, dict[str, Any], str | None]:
+    if not ext:
+        return False, {}, None
+    status = (ext.carton_status or "").upper() if ext.carton_status else None
+    if status not in ("OK", "DAMAGED"):
+        return False, {}, None
+    if status == "OK":
+        s["carton_status"] = "OK"
+        return True, {"carton_status": "OK"}, None
+    if not ext.damage_type or not ext.damage_severity:
+        return False, {}, "Carton damaged. State the damage type and severity (minor or major)."
+    sev = (ext.damage_severity or "").upper()
+    if sev not in ("MINOR", "MAJOR"):
+        return False, {}, None
+    s["carton_status"] = "DAMAGED"
+    s["damage_type"] = ext.damage_type
+    s["damage_severity"] = sev
+    return True, {"carton_status": "DAMAGED", "damage_type": ext.damage_type, "damage_severity": sev}, None
 
 
 def carton_condition_node(state: InspectionState) -> InspectionState:
-    """
-    Step 2 from required_flow.md:
-    - Ask carton condition.
-    - Capture OK or (damage_type + damage_severity).
-    - Advance to STYLE_SKU_VERIFICATION when captured.
-    """
-
-    s: InspectionState = dict(state)
-    s.setdefault("history", [])
-    s.setdefault("events", [])
-
-    user_input = s.get("last_user_input") or {}
-    transcript = (user_input.get("transcript") or "").strip()
-
-    if not transcript:
-        s["current_node"] = "CARTON_CONDITION"
-        s["awaiting_input"] = True
-        s["last_prompt"] = {"text": CARTON_CONDITION_PROMPT, "ts": utc_now()}
-        s["events"].append(make_event(node="CARTON_CONDITION", type_="PROMPTED", payload={}))
-        return s
-
-    carton_status, damage_type, damage_severity = parse_carton_condition(transcript)
-
-    if carton_status is None:
-        s["current_node"] = "CARTON_CONDITION"
-        s["awaiting_input"] = True
-        s["last_prompt"] = {
-            "text": "Say Carton OK, or say the damage type and severity (minor or major).",
-            "ts": utc_now(),
-        }
-        s["events"].append(
-            make_event(
-                node="CARTON_CONDITION",
-                type_="VALIDATION_FAILED",
-                payload={"transcript": transcript},
-            )
-        )
-        s["last_user_input"] = {}
-        return s
-
-    if carton_status == "OK":
-        s["carton_status"] = "OK"
-        s["events"].append(
-            make_event(node="CARTON_CONDITION", type_="FIELDS_CAPTURED", payload={"carton_status": "OK"})
-        )
-        s["history"].append("CARTON_CONDITION")
-        s["awaiting_input"] = False
-        s["last_completed_node"] = "CARTON_CONDITION"
-        s["last_user_input"] = {}
-        return s
-
-    # DAMAGED case requires both type and severity.
-    if not damage_type or not damage_severity:
-        missing: list[str] = []
-        if not damage_type:
-            missing.append("damage_type")
-        if not damage_severity:
-            missing.append("damage_severity")
-
-        s["carton_status"] = "DAMAGED"
-        s["current_node"] = "CARTON_CONDITION"
-        s["awaiting_input"] = True
-        s["last_prompt"] = {
-            "text": "Carton damaged. State the damage type and severity (minor or major).",
-            "ts": utc_now(),
-        }
-        s["events"].append(
-            make_event(
-                node="CARTON_CONDITION",
-                type_="VALIDATION_FAILED",
-                payload={"missing": missing, "transcript": transcript},
-            )
-        )
-        s["last_user_input"] = {}
-        return s
-
-    s["carton_status"] = "DAMAGED"
-    s["damage_type"] = damage_type
-    s["damage_severity"] = damage_severity
-    s["events"].append(
-        make_event(
-            node="CARTON_CONDITION",
-            type_="FIELDS_CAPTURED",
-            payload={
-                "carton_status": "DAMAGED",
-                "damage_type": damage_type,
-                "damage_severity": damage_severity,
-            },
-        )
-    )
-    s["history"].append("CARTON_CONDITION")
-    s["awaiting_input"] = False
-    s["last_completed_node"] = "CARTON_CONDITION"
-    s["last_user_input"] = {}
-    return s
-
+    return run_node(state, "CARTON_CONDITION", CARTON_CONDITION_PROMPT, apply_carton)
